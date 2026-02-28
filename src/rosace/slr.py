@@ -39,6 +39,14 @@ def run_slr(
     Score
         Score object with slope (``mean``), standard error (``sd``), and
         local false sign rate (``lfsr``) per variant.
+
+        .. note::
+            Calling :func:`~rosace.utils.output_score` on the returned
+            ``Score`` will recompute and overwrite the ``lfsr`` column using
+            the same normal-approximation formula.  Both computations are
+            equivalent; the ``lfsr`` stored here is provided for convenience
+            so the raw ``Score`` object is already usable without an extra
+            ``output_score`` call.
     """
     if isinstance(assay, AssayGrowth):
         return _slr_assay_growth(assay, t)
@@ -105,6 +113,18 @@ def _slr_assay_set_growth(
 
     For each variant, concatenates (time, normalized_count) pairs from every
     replicate and fits a single pooled OLS regression.
+
+    Time indices are assigned independently per replicate starting from 0
+    (i.e. ``[0, 1, ..., rounds]`` for each replicate block), so different
+    replicates share the same relative time axis regardless of the absolute
+    experimental schedule.  This is appropriate when all replicates have the
+    same number of rounds.
+
+    When replicates have *different* numbers of rounds the pooled slope is
+    still well-defined but observations from the longer replicate will span a
+    wider time range, which shifts the pooled estimate toward that replicate's
+    slope.  If this is undesirable, run :func:`run_slr` separately on each
+    single-replicate ``AssayGrowth`` and combine scores downstream.
     """
     var_names = assay.var_names
     n_vars = len(var_names)

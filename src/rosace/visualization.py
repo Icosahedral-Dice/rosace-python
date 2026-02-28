@@ -71,8 +71,8 @@ def _save_figure(fig, savedir: Optional[str], name: str) -> None:
 def score_heatmap(
     data: pd.DataFrame,
     pos_col: str = "position",
-    wt_col: str = "wildtype",
-    mut_col: str = "mutation",
+    wt_col: str = "wt",
+    mut_col: str = "mut",
     type_col: str = "type",
     score_col: str = "mean",
     ctrl_name: str = "synonymous",
