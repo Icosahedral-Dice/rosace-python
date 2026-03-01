@@ -14,7 +14,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=7.0", "pytest-cov"]
+dev = ["pytest>=7.0", "pytest-cov", "pre-commit>=3.0", "black>=24.0", "isort>=5.0"]
 viz = ["matplotlib>=3.7", "seaborn>=0.12"]
 vignettes = ["matplotlib>=3.7", "seaborn>=0.12", "jupyter>=1.0", "nbformat>=5.0"]
 
@@ -24,3 +24,11 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/rosace"]
+
+[tool.black]
+line-length = 88
+target-version = ["py310"]
+
+[tool.isort]
+profile = "black"
+line_length = 88
