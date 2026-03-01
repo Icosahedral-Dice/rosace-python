@@ -78,7 +78,12 @@ def _slr_assay_growth(assay: AssayGrowth, t: Optional[list[float]]) -> Score:
     var_names = assay.norm_var_names or assay.var_names
     n_vars = len(var_names)
     T = norm_counts.shape[1]
-    t_arr = np.arange(T, dtype=float) if t is None else np.array(t[:T], dtype=float)
+    rounds = assay.rounds  # T - 1
+    if t is None:
+        # Match R: seq(0, rounds)/rounds → [0, 1/rounds, ..., 1]
+        t_arr = np.arange(T, dtype=float) / rounds if rounds > 0 else np.zeros(T)
+    else:
+        t_arr = np.array(t[:T], dtype=float)
 
     slopes = np.full(n_vars, np.nan)
     stderrs = np.full(n_vars, np.nan)
@@ -114,17 +119,9 @@ def _slr_assay_set_growth(
     For each variant, concatenates (time, normalized_count) pairs from every
     replicate and fits a single pooled OLS regression.
 
-    Time indices are assigned independently per replicate starting from 0
-    (i.e. ``[0, 1, ..., rounds]`` for each replicate block), so different
-    replicates share the same relative time axis regardless of the absolute
-    experimental schedule.  This is appropriate when all replicates have the
-    same number of rounds.
-
-    When replicates have *different* numbers of rounds the pooled slope is
-    still well-defined but observations from the longer replicate will span a
-    wider time range, which shifts the pooled estimate toward that replicate's
-    slope.  If this is undesirable, run :func:`run_slr` separately on each
-    single-replicate ``AssayGrowth`` and combine scores downstream.
+    Time is normalised by ``max(rounds)`` so that each replicate spans
+    ``[0, 1/denom, ..., rounds_i/denom]``, matching the R implementation:
+    ``xt <- unlist(lapply(rounds, function(x) seq(0, x) / max(rounds)))``.
     """
     var_names = assay.var_names
     n_vars = len(var_names)
@@ -135,16 +132,18 @@ def _slr_assay_set_growth(
             "AssaySetGrowth.rounds must be populated before running SLR."
         )
 
+    # Match R: denom <- max(rounds); xt <- seq(0, x)/denom for each replicate
+    max_rounds = max(rounds_list)
+
     # Build (t_block, col_slice) pairs for each replicate
     blocks: list[tuple[np.ndarray, list[int]]] = []
     col_offset = 0
     for n_rounds in rounds_list:
         n_tp = n_rounds + 1
-        t_block = (
-            np.arange(n_tp, dtype=float)
-            if t is None
-            else np.array(t[:n_tp], dtype=float)
-        )
+        if t is None:
+            t_block = np.arange(n_tp, dtype=float) / max_rounds
+        else:
+            t_block = np.array(t[:n_tp], dtype=float)
         blocks.append((t_block, list(range(col_offset, col_offset + n_tp))))
         col_offset += n_tp
 
