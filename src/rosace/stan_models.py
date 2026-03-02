@@ -88,15 +88,15 @@ transformed data {
   diagon[1] = 1.0;
   vector[B-1] off_diagonal = rep_vector(0, B-1);
   real<lower=0> off_diag_ss = 0.;
-  for (i in 1:B-1) {
+  for (i in 1:(B-1)) {
     off_diagonal[i] = (-1.0 / (B - 1) - off_diag_ss) / diagon[i];
     off_diag_ss = off_diag_ss + off_diagonal[i] * off_diagonal[i];
     diagon[i+1] = sqrt(1.0 - off_diag_ss);
   }
   matrix[B, B-1] nu_multiplier = rep_matrix(0.0, B, B-1);
-  for (i in 1:B-1) {
+  for (i in 1:(B-1)) {
     nu_multiplier[i][i] = diagon[i];
-    for (j in i:B-1) {
+    for (j in i:(B-1)) {
       nu_multiplier[j+1][i] = off_diagonal[i];
     }
   }
@@ -157,15 +157,15 @@ transformed data {
   diagon[1] = 1.0;
   vector[B-1] off_diagonal = rep_vector(0, B-1);
   real<lower=0> off_diag_ss = 0.;
-  for (i in 1:B-1) {
+  for (i in 1:(B-1)) {
     off_diagonal[i] = (-1.0 / (B - 1) - off_diag_ss) / diagon[i];
     off_diag_ss = off_diag_ss + off_diagonal[i] * off_diagonal[i];
     diagon[i+1] = sqrt(1.0 - off_diag_ss);
   }
   matrix[B, B-1] nu_multiplier = rep_matrix(0.0, B, B-1);
-  for (i in 1:B-1) {
+  for (i in 1:(B-1)) {
     nu_multiplier[i][i] = diagon[i];
-    for (j in i:B-1) {
+    for (j in i:(B-1)) {
       nu_multiplier[j+1][i] = off_diagonal[i];
     }
   }
