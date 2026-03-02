@@ -252,7 +252,7 @@ def output_score(
 
     df["lfsr"] = lfsr
     label = np.where(
-        lfsr >= sig_test,
+        lfsr >= sig_test / 2,
         "Neutral",
         np.where(mu > 0, "Pos", "Neg"),
     )

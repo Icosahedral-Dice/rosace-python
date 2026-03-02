@@ -91,7 +91,7 @@ def impute_data(
     elif method == "knn":
         from sklearn.impute import KNNImputer
 
-        imputer = KNNImputer(n_neighbors=5)
+        imputer = KNNImputer(n_neighbors=10)
         counts = imputer.fit_transform(counts)
     else:
         raise ValueError(f"Unknown imputation method {method!r}. Use 'zero' or 'knn'.")

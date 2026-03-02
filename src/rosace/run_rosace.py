@@ -30,9 +30,13 @@ def gen_rosace_input(
     method:
         One of ROSACE0, ROSACE1, ROSACE2, ROSACE3.
     t:
-        Time vector. If None, uses [0, 1, ..., T-1].
+        Time vector. If None, generates a normalised time vector matching the
+        R implementation: ``seq(0, rounds)/rounds`` for a single replicate, or
+        ``seq(0, r_i)/max(rounds)`` for each replicate ``i`` in a set.
     n_mean_groups:
-        Number of mean count groups for vMAPm (quantile-based).
+        Fallback number of quantile groups for vMAPm when raw counts are
+        unavailable. When raw counts are present (the normal case), vMAPm is
+        computed from raw counts as ``ceiling(rank(rowSums)/25)``, matching R.
     var_info:
         DataFrame with columns ``variant``, ``pos``, ``wt``, ``mut``.
         Required for ROSACE1/2/3 (position-level grouping).
@@ -47,30 +51,61 @@ def gen_rosace_input(
         norm_counts = assay.norm_counts
         var_names = assay.norm_var_names or assay.var_names
         T = assay.counts.shape[1]
+        rounds = assay.rounds  # T - 1
+        # Raw counts for the normalized variants (wt may have been removed)
+        if assay.norm_var_names is not None:
+            _name_to_raw_idx = {v: i for i, v in enumerate(assay.var_names)}
+            raw_for_norm = assay.counts[
+                [_name_to_raw_idx[v] for v in var_names if v in _name_to_raw_idx], :
+            ]
+        else:
+            raw_for_norm = assay.counts
     else:
         norm_counts = assay.combined_counts
         var_names = assay.var_names
         T = assay.combined_counts.shape[1]
+        rounds = assay.rounds  # list of per-replicate rounds
+        raw_for_norm = assay.raw_counts if assay.raw_counts is not None else None
 
     if norm_counts is None:
         raise ValueError("assay must have norm_counts populated.")
 
     V = len(var_names)
+
+    # Default time vector: match R normalisation
+    # AssayGrowth:    t = seq(0, rounds)/rounds     → [0, 1/rounds, …, 1]
+    # AssaySetGrowth: t = seq(0, r_i)/max(rounds)   for each replicate i
     if t is None:
-        t = list(range(T))
+        if isinstance(assay, AssayGrowth):
+            denom = rounds if rounds > 0 else 1
+            t = [i / denom for i in range(T)]
+        else:
+            r_list = rounds if rounds is not None else [T - 1]
+            max_r = max(r_list) if r_list else 1
+            t = [i / max_r for r in r_list for i in range(r + 1)]
 
     # Replace any remaining NaN with 0 in norm_counts
     m = np.nan_to_num(norm_counts, nan=0.0)
 
-    # Mean count groups (vMAPm): based on mean of absolute norm counts
-    mean_abs = np.abs(m).mean(axis=1)
-    quantiles = np.percentile(mean_abs, np.linspace(0, 100, n_mean_groups + 1))
-    vMAPm = np.searchsorted(quantiles[1:-1], mean_abs, side="right") + 1  # 1-indexed
+    # Mean count groups (vMAPm): match R — ceiling(rank(rowSums(raw.counts))/25)
+    # Groups variants by total raw count; each group has ~25 variants.
+    if raw_for_norm is not None and raw_for_norm.shape[0] == V:
+        row_sums = np.nansum(raw_for_norm, axis=1)
+        ranks = scipy.stats.rankdata(row_sums)  # 1-indexed fractional ranks
+        vMAPm = np.ceil(ranks / 25).astype(int)
+    else:
+        # Fallback: quantile-based grouping on abs normalised counts
+        mean_abs = np.abs(m).mean(axis=1)
+        quantiles = np.percentile(mean_abs, np.linspace(0, 100, n_mean_groups + 1))
+        vMAPm = np.ceil(
+            np.searchsorted(quantiles[1:-1], mean_abs, side="right") + 1
+        ).astype(int)
+    M = int(vMAPm.max())
 
     data: dict = {
         "T": T,
         "V": V,
-        "M": n_mean_groups,
+        "M": M,
         "vMAPm": vMAPm.tolist(),
         "t": t,
         "m": m.tolist(),

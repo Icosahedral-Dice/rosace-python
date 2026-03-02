@@ -117,6 +117,23 @@ class TestGenRosaceInput:
         data = gen_rosace_input(a, method="ROSACE0", t=[0, 2, 4, 6])
         assert data["t"] == [0, 2, 4, 6]
 
+    def test_default_time_vector_normalized(self):
+        # Default time vector must match R: seq(0, rounds)/rounds → [0, 1/3, 2/3, 1]
+        a = make_normed_assay(n_vars=5, n_tp=4)  # rounds = 3
+        data = gen_rosace_input(a, method="ROSACE0")
+        expected = [0.0, 1 / 3, 2 / 3, 1.0]
+        assert len(data["t"]) == 4
+        for got, exp in zip(data["t"], expected):
+            assert abs(got - exp) < 1e-12, f"t mismatch: {data['t']} != {expected}"
+
+    def test_vmapm_from_raw_counts(self):
+        # vMAPm should be rank-based (ceiling(rank/25)), not quantile-based
+        a = make_normed_assay(n_vars=30, n_tp=4)
+        data = gen_rosace_input(a, method="ROSACE0")
+        # With 30 variants, ceiling(rank/25) gives groups 1 and 2
+        assert all(g >= 1 for g in data["vMAPm"])
+        assert data["M"] == max(data["vMAPm"])
+
 
 class TestBlosumMapping:
     def test_synonymous(self):
