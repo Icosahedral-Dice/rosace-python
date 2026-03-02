@@ -278,6 +278,7 @@ def run_rosace(
 
     # Position-level scores for ROSACE1/2/3
     optional_score = None
+    misc: dict = {}
     if method in ("ROSACE1", "ROSACE2", "ROSACE3") and var_info is not None:
         phi_samples = fit.stan_variable("phi")  # (draws, P)
         phi_mu = phi_samples.mean(axis=0)
@@ -297,10 +298,28 @@ def run_rosace(
             "sd": phi_sd,
         })
 
+    # BLOSUM group (psi) scores for ROSACE2/3
+    if method in ("ROSACE2", "ROSACE3"):
+        psi_samples = fit.stan_variable("psi")  # (draws, B)
+        psi_mu = psi_samples.mean(axis=0)
+        psi_sd = psi_samples.std(axis=0)
+        misc["blosum_scores"] = pd.DataFrame({
+            "blosum_group": list(range(1, len(psi_mu) + 1)),
+            "mean": psi_mu,
+            "sd": psi_sd,
+        })
+
+    # Global activation fraction rho for ROSACE3 (pos.act.info in R vignette)
+    if method == "ROSACE3":
+        rho_samples = fit.stan_variable("rho")  # (draws,)
+        misc["rho_mean"] = float(rho_samples.mean())
+        misc["rho_sd"] = float(rho_samples.std())
+
     return Score(
         method=method,
         type=assay_type,
         assay_name=assay_name,
         score=score_df,
         optional_score=optional_score,
+        misc=misc,
     )
