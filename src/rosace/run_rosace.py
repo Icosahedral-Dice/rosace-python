@@ -11,7 +11,7 @@ import scipy.stats
 from rosace.assay import AssayGrowth, AssaySetGrowth
 from rosace.score import Score
 from rosace.stan_models import STAN_MODELS
-from rosace.utils import map_blosum_score
+from rosace.utils import map_blosum_score, compute_blosum_groups
 
 
 def gen_rosace_input(
@@ -140,19 +140,21 @@ def gen_rosace_input(
     if method == "ROSACE1":
         return data
 
-    # ROSACE2/3: BLOSUM grouping
-    blosum_groups: list[int] = []
-    for v in var_names:
-        row = vi.loc[v]
-        try:
-            group = map_blosum_score(str(row["wt"]), str(row["mut"]))
-        except (ValueError, KeyError):
-            group = 5  # default to group 5 (score 0) for unknown
-        blosum_groups.append(group)
+    # ROSACE2/3: BLOSUM grouping via coverage-based merging (mirrors R)
+    # Requires wt and mut columns in var_info
+    wt_list = [str(vi.loc[v, "wt"]) for v in var_names]
+    mut_list = [str(vi.loc[v, "mut"]) for v in var_names]
 
-    B = 11  # groups 1..11
+    vMAPb, B, blosum_count = compute_blosum_groups(
+        wt_list=wt_list,
+        mut_list=mut_list,
+        pos_index_list=vMAPp,  # use position indices for coverage calculation
+        coverage_threshold=0.2,
+    )
+
     data["B"] = B
-    data["vMAPb"] = blosum_groups
+    data["vMAPb"] = vMAPb
+    data["blosum_count"] = blosum_count
 
     return data
 
@@ -298,22 +300,27 @@ def run_rosace(
             "sd": phi_sd,
         })
 
-    # BLOSUM group (psi) scores for ROSACE2/3
+    # BLOSUM group (nu) scores for ROSACE2/3
     if method in ("ROSACE2", "ROSACE3"):
-        psi_samples = fit.stan_variable("psi")  # (draws, B)
-        psi_mu = psi_samples.mean(axis=0)
-        psi_sd = psi_samples.std(axis=0)
+        nu_samples = fit.stan_variable("nu")  # (draws, B)
+        nu_mu = nu_samples.mean(axis=0)
+        nu_sd = nu_samples.std(axis=0)
         misc["blosum_scores"] = pd.DataFrame({
-            "blosum_group": list(range(1, len(psi_mu) + 1)),
-            "mean": psi_mu,
-            "sd": psi_sd,
+            "blosum_group": list(range(1, len(nu_mu) + 1)),
+            "mean": nu_mu,
+            "sd": nu_sd,
         })
 
-    # Global activation fraction rho for ROSACE3 (pos.act.info in R vignette)
+    # Per-position activation fraction rho for ROSACE3 (vector of length P)
     if method == "ROSACE3":
-        rho_samples = fit.stan_variable("rho")  # (draws,)
-        misc["rho_mean"] = float(rho_samples.mean())
-        misc["rho_sd"] = float(rho_samples.std())
+        rho_samples = fit.stan_variable("rho")  # (draws, P)
+        rho_mu = rho_samples.mean(axis=0)
+        rho_sd = rho_samples.std(axis=0)
+        misc["rho_scores"] = pd.DataFrame({
+            "pos": pos_order,
+            "rho_mean": rho_mu,
+            "rho_sd": rho_sd,
+        })
 
     return Score(
         method=method,

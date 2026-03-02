@@ -109,8 +109,11 @@ class TestGenRosaceInput:
         })
         data = gen_rosace_input(a, method="ROSACE2", var_info=var_info)
         assert "vMAPb" in data
-        assert data["B"] == 11
-        assert all(1 <= g <= 11 for g in data["vMAPb"])
+        assert "blosum_count" in data
+        B = data["B"]
+        assert B >= 1
+        assert len(data["blosum_count"]) == B
+        assert all(1 <= g <= B for g in data["vMAPb"])
 
     def test_time_vector(self):
         a = make_normed_assay(n_vars=5, n_tp=4)
@@ -137,21 +140,24 @@ class TestGenRosaceInput:
 
 class TestBlosumMapping:
     def test_synonymous(self):
-        assert map_blosum_score("A", "A") == 11
+        # All synonymous substitutions return 5 (min(BLOSUM90 diagonal, 5))
+        assert map_blosum_score("A", "A") == 5
+        assert map_blosum_score("W", "W") == 5  # W diagonal = 11, capped to 5
 
     def test_known_negative(self):
-        # W->A has BLOSUM score -3 -> group 2
+        # W->A: BLOSUM90 score = -4
         result = map_blosum_score("W", "A")
-        assert result == 2
+        assert result == -4
 
     def test_known_positive(self):
-        # I->V has BLOSUM score 3 -> group 8
+        # I->V: BLOSUM90 score = 3
         result = map_blosum_score("I", "V")
-        assert result == 8
+        assert result == 3
 
-    def test_all_groups_1_to_10(self):
-        # Just check function returns valid groups for various pairs
+    def test_score_range(self):
+        # All missense scores should be in BLOSUM90 range and <= 5
         for wt in "ARND":
             for mut in "CQEGH":
-                g = map_blosum_score(wt, mut)
-                assert 1 <= g <= 11, f"Group {g} out of range for ({wt},{mut})"
+                s = map_blosum_score(wt, mut)
+                assert s <= 5, f"Score {s} above cap for ({wt},{mut})"
+                assert s >= -8, f"Score {s} below expected range for ({wt},{mut})"
