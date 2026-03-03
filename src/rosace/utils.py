@@ -22,6 +22,11 @@ def _load_matrix(matrix_name: str):
     matrix_name:
         Name of the substitution matrix (e.g. ``"BLOSUM90"``, ``"BLOSUM62"``).
         Any matrix available in ``Bio.Align.substitution_matrices`` is accepted.
+
+    Returns
+    -------
+    Bio.Align.substitution_matrices.Array
+        The loaded substitution matrix, cached for subsequent calls.
     """
     if matrix_name not in _MATRIX_CACHE:
         from Bio.Align import substitution_matrices

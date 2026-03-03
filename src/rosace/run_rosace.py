@@ -266,6 +266,7 @@ def run_rosace(
         assay_name = assay.key
         assay_type = "AssaySetGrowth"
 
+    # method is already validated above; _STAN_FILE_MAP lookup is safe
     stan_file_ref = importlib.resources.files("rosace") / "stan" / _STAN_FILE_MAP[method]
     with importlib.resources.as_file(stan_file_ref) as stan_path:
         model = cmdstanpy.CmdStanModel(stan_file=str(stan_path))
