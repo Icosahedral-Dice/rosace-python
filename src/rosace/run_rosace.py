@@ -1,8 +1,7 @@
 """Functions to prepare input and run ROSACE Stan models."""
 
 from __future__ import annotations
-import os
-import tempfile
+import importlib.resources
 from typing import Optional, Union
 import numpy as np
 import pandas as pd
@@ -10,8 +9,15 @@ import scipy.stats
 
 from rosace.assay import AssayGrowth, AssaySetGrowth
 from rosace.score import Score
-from rosace.stan_models import STAN_MODELS
 from rosace.utils import map_blosum_score, compute_blosum_groups
+
+# Map method names to bundled .stan file names
+_STAN_FILE_MAP = {
+    "ROSACE0": "growth_nopos.stan",
+    "ROSACE1": "growth_pos.stan",
+    "ROSACE2": "growth_pos_blosum_nosyn.stan",
+    "ROSACE3": "growth_pos_blosum_act_nosyn.stan",
+}
 
 
 def gen_rosace_input(
@@ -20,6 +26,7 @@ def gen_rosace_input(
     t: Optional[list[float]] = None,
     n_mean_groups: int = 5,
     var_info: Optional[pd.DataFrame] = None,
+    matrix: str = "BLOSUM90",
 ) -> dict:
     """Generate the Stan data dictionary for a ROSACE growth model.
 
@@ -40,7 +47,12 @@ def gen_rosace_input(
     var_info:
         DataFrame with columns ``variant``, ``pos``, ``wt``, ``mut``.
         Required for ROSACE1/2/3 (position-level grouping).
-        For ROSACE2/3, also needs ``wt`` and ``mut`` for BLOSUM mapping.
+        For ROSACE2/3, also needs ``wt`` and ``mut`` for substitution matrix
+        grouping.
+    matrix:
+        Name of the BioPython substitution matrix used to assign amino acid
+        groups for ROSACE2/3.  Defaults to ``"BLOSUM90"`` to match the R
+        rosaceAA package.
 
     Returns
     -------
@@ -150,6 +162,7 @@ def gen_rosace_input(
         mut_list=mut_list,
         pos_index_list=vMAPp,  # use position indices for coverage calculation
         coverage_threshold=0.2,
+        matrix=matrix,
     )
 
     data["B"] = B
@@ -190,6 +203,7 @@ def run_rosace(
     iter_warmup: int = 1000,
     iter_sampling: int = 1000,
     seed: Optional[int] = None,
+    matrix: str = "BLOSUM90",
 ) -> Score:
     """Run ROSACE MCMC inference and return a Score object.
 
@@ -215,6 +229,9 @@ def run_rosace(
         Number of sampling iterations per chain.
     seed:
         Random seed for reproducibility.
+    matrix:
+        Name of the BioPython substitution matrix for ROSACE2/3 amino acid
+        grouping.  Defaults to ``"BLOSUM90"`` to match the R rosaceAA package.
 
     Returns
     -------
@@ -228,9 +245,8 @@ def run_rosace(
             "cmdstanpy is required to run ROSACE. Install it with: pip install cmdstanpy"
         ) from exc
 
-    stan_code = STAN_MODELS.get(method)
-    if stan_code is None:
-        raise ValueError(f"Unknown method {method!r}. Choose from {list(STAN_MODELS)}")
+    if method not in _STAN_FILE_MAP:
+        raise ValueError(f"Unknown method {method!r}. Choose from {list(_STAN_FILE_MAP)}")
 
     stan_data = gen_rosace_input(
         assay=assay,
@@ -238,6 +254,7 @@ def run_rosace(
         t=t,
         n_mean_groups=n_mean_groups,
         var_info=var_info,
+        matrix=matrix,
     )
 
     if isinstance(assay, AssayGrowth):
@@ -249,12 +266,9 @@ def run_rosace(
         assay_name = assay.key
         assay_type = "AssaySetGrowth"
 
-    with tempfile.NamedTemporaryFile(suffix=".stan", mode="w", delete=False) as fh:
-        fh.write(stan_code)
-        stan_file = fh.name
-
-    try:
-        model = cmdstanpy.CmdStanModel(stan_file=stan_file)
+    stan_file_ref = importlib.resources.files("rosace") / "stan" / _STAN_FILE_MAP[method]
+    with importlib.resources.as_file(stan_file_ref) as stan_path:
+        model = cmdstanpy.CmdStanModel(stan_file=str(stan_path))
         fit = model.sample(
             data=stan_data,
             chains=chains,
@@ -264,8 +278,6 @@ def run_rosace(
             seed=seed,
             show_progress=False,
         )
-    finally:
-        os.unlink(stan_file)
 
     # Extract beta posteriors: shape (total_draws, V)
     beta_samples = fit.stan_variable("beta")  # (draws, V)
