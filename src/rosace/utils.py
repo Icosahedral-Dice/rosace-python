@@ -8,111 +8,102 @@ import scipy.stats
 
 from rosace.assay import AssayGrowth, AssaySetGrowth
 
-# BLOSUM62 matrix (single-letter amino acid codes)
-# Sourced from NCBI BLOSUM62.
+# BLOSUM90 matrix (single-letter amino acid codes)
+# Sourced from NCBI BLOSUM90. Matches the matrix used in the R rosaceAA package.
+# AA order: ARNDCQEGHILKMFPSTWYV
 _AA_ORDER = "ARNDCQEGHILKMFPSTWYV"
 
-_BLOSUM62_FLAT = {
-    ('A','A'): 4,  ('A','R'):-1,  ('A','N'):-2,  ('A','D'):-2,  ('A','C'): 0,
-    ('A','Q'):-1,  ('A','E'):-1,  ('A','G'): 0,  ('A','H'):-2,  ('A','I'):-1,
-    ('A','L'):-1,  ('A','K'):-1,  ('A','M'):-1,  ('A','F'):-2,  ('A','P'):-1,
-    ('A','S'): 1,  ('A','T'): 0,  ('A','W'):-3,  ('A','Y'):-2,  ('A','V'): 0,
-    ('R','A'):-1,  ('R','R'): 5,  ('R','N'):-0,  ('R','D'):-2,  ('R','C'):-3,
-    ('R','Q'): 1,  ('R','E'): 0,  ('R','G'):-2,  ('R','H'): 0,  ('R','I'):-3,
-    ('R','L'):-2,  ('R','K'): 2,  ('R','M'):-1,  ('R','F'):-3,  ('R','P'):-2,
-    ('R','S'):-1,  ('R','T'):-1,  ('R','W'):-3,  ('R','Y'):-2,  ('R','V'):-3,
-    ('N','A'):-2,  ('N','R'): 0,  ('N','N'): 6,  ('N','D'): 1,  ('N','C'):-3,
-    ('N','Q'): 0,  ('N','E'): 0,  ('N','G'): 0,  ('N','H'): 1,  ('N','I'):-3,
-    ('N','L'):-3,  ('N','K'): 0,  ('N','M'):-2,  ('N','F'):-3,  ('N','P'):-2,
-    ('N','S'): 1,  ('N','T'): 0,  ('N','W'):-4,  ('N','Y'):-2,  ('N','V'):-3,
-    ('D','A'):-2,  ('D','R'):-2,  ('D','N'): 1,  ('D','D'): 6,  ('D','C'):-3,
-    ('D','Q'): 0,  ('D','E'): 2,  ('D','G'):-1,  ('D','H'):-1,  ('D','I'):-3,
-    ('D','L'):-4,  ('D','K'):-1,  ('D','M'):-3,  ('D','F'):-3,  ('D','P'):-1,
-    ('D','S'): 0,  ('D','T'):-1,  ('D','W'):-4,  ('D','Y'):-3,  ('D','V'):-3,
-    ('C','A'): 0,  ('C','R'):-3,  ('C','N'):-3,  ('C','D'):-3,  ('C','C'): 9,
-    ('C','Q'):-3,  ('C','E'):-4,  ('C','G'):-3,  ('C','H'):-3,  ('C','I'):-1,
-    ('C','L'):-1,  ('C','K'):-3,  ('C','M'):-1,  ('C','F'):-2,  ('C','P'):-3,
-    ('C','S'):-1,  ('C','T'):-1,  ('C','W'):-2,  ('C','Y'):-2,  ('C','V'):-1,
-    ('Q','A'):-1,  ('Q','R'): 1,  ('Q','N'): 0,  ('Q','D'): 0,  ('Q','C'):-3,
-    ('Q','Q'): 5,  ('Q','E'): 2,  ('Q','G'):-2,  ('Q','H'): 0,  ('Q','I'):-3,
-    ('Q','L'):-2,  ('Q','K'): 1,  ('Q','M'): 0,  ('Q','F'):-3,  ('Q','P'):-1,
-    ('Q','S'): 0,  ('Q','T'):-1,  ('Q','W'):-2,  ('Q','Y'):-1,  ('Q','V'):-2,
-    ('E','A'):-1,  ('E','R'): 0,  ('E','N'): 0,  ('E','D'): 2,  ('E','C'):-4,
-    ('E','Q'): 2,  ('E','E'): 5,  ('E','G'):-2,  ('E','H'): 0,  ('E','I'):-3,
-    ('E','L'):-3,  ('E','K'): 1,  ('E','M'):-2,  ('E','F'):-3,  ('E','P'):-1,
-    ('E','S'): 0,  ('E','T'):-1,  ('E','W'):-3,  ('E','Y'):-2,  ('E','V'):-2,
-    ('G','A'): 0,  ('G','R'):-2,  ('G','N'): 0,  ('G','D'):-1,  ('G','C'):-3,
-    ('G','Q'):-2,  ('G','E'):-2,  ('G','G'): 6,  ('G','H'):-2,  ('G','I'):-4,
-    ('G','L'):-4,  ('G','K'):-2,  ('G','M'):-3,  ('G','F'):-3,  ('G','P'):-2,
-    ('G','S'): 0,  ('G','T'):-2,  ('G','W'):-2,  ('G','Y'):-3,  ('G','V'):-3,
-    ('H','A'):-2,  ('H','R'): 0,  ('H','N'): 1,  ('H','D'):-1,  ('H','C'):-3,
-    ('H','Q'): 0,  ('H','E'): 0,  ('H','G'):-2,  ('H','H'): 8,  ('H','I'):-3,
-    ('H','L'):-3,  ('H','K'):-1,  ('H','M'):-2,  ('H','F'):-1,  ('H','P'):-2,
-    ('H','S'):-1,  ('H','T'):-2,  ('H','W'):-2,  ('H','Y'): 2,  ('H','V'):-3,
-    ('I','A'):-1,  ('I','R'):-3,  ('I','N'):-3,  ('I','D'):-3,  ('I','C'):-1,
-    ('I','Q'):-3,  ('I','E'):-3,  ('I','G'):-4,  ('I','H'):-3,  ('I','I'): 4,
-    ('I','L'): 2,  ('I','K'):-3,  ('I','M'): 1,  ('I','F'): 0,  ('I','P'):-3,
-    ('I','S'):-2,  ('I','T'):-1,  ('I','W'):-3,  ('I','Y'):-1,  ('I','V'): 3,
-    ('L','A'):-1,  ('L','R'):-2,  ('L','N'):-3,  ('L','D'):-4,  ('L','C'):-1,
-    ('L','Q'):-2,  ('L','E'):-3,  ('L','G'):-4,  ('L','H'):-3,  ('L','I'): 2,
-    ('L','L'): 4,  ('L','K'):-2,  ('L','M'): 2,  ('L','F'): 0,  ('L','P'):-3,
-    ('L','S'):-2,  ('L','T'):-1,  ('L','W'):-2,  ('L','Y'):-1,  ('L','V'): 1,
-    ('K','A'):-1,  ('K','R'): 2,  ('K','N'): 0,  ('K','D'):-1,  ('K','C'):-3,
-    ('K','Q'): 1,  ('K','E'): 1,  ('K','G'):-2,  ('K','H'):-1,  ('K','I'):-3,
-    ('K','L'):-2,  ('K','K'): 5,  ('K','M'):-1,  ('K','F'):-3,  ('K','P'):-1,
-    ('K','S'): 0,  ('K','T'):-1,  ('K','W'):-3,  ('K','Y'):-2,  ('K','V'):-2,
-    ('M','A'):-1,  ('M','R'):-1,  ('M','N'):-2,  ('M','D'):-3,  ('M','C'):-1,
-    ('M','Q'): 0,  ('M','E'):-2,  ('M','G'):-3,  ('M','H'):-2,  ('M','I'): 1,
-    ('M','L'): 2,  ('M','K'):-1,  ('M','M'): 5,  ('M','F'): 0,  ('M','P'):-2,
-    ('M','S'):-1,  ('M','T'):-1,  ('M','W'):-1,  ('M','Y'):-1,  ('M','V'): 1,
-    ('F','A'):-2,  ('F','R'):-3,  ('F','N'):-3,  ('F','D'):-3,  ('F','C'):-2,
-    ('F','Q'):-3,  ('F','E'):-3,  ('F','G'):-3,  ('F','H'):-1,  ('F','I'): 0,
-    ('F','L'): 0,  ('F','K'):-3,  ('F','M'): 0,  ('F','F'): 6,  ('F','P'):-4,
-    ('F','S'):-2,  ('F','T'):-2,  ('F','W'): 1,  ('F','Y'): 3,  ('F','V'):-1,
-    ('P','A'):-1,  ('P','R'):-2,  ('P','N'):-2,  ('P','D'):-1,  ('P','C'):-3,
-    ('P','Q'):-1,  ('P','E'):-1,  ('P','G'):-2,  ('P','H'):-2,  ('P','I'):-3,
-    ('P','L'):-3,  ('P','K'):-1,  ('P','M'):-2,  ('P','F'):-4,  ('P','P'): 7,
-    ('P','S'):-1,  ('P','T'):-1,  ('P','W'):-4,  ('P','Y'):-3,  ('P','V'):-2,
-    ('S','A'): 1,  ('S','R'):-1,  ('S','N'): 1,  ('S','D'): 0,  ('S','C'):-1,
-    ('S','Q'): 0,  ('S','E'): 0,  ('S','G'): 0,  ('S','H'):-1,  ('S','I'):-2,
-    ('S','L'):-2,  ('S','K'): 0,  ('S','M'):-1,  ('S','F'):-2,  ('S','P'):-1,
-    ('S','S'): 4,  ('S','T'): 1,  ('S','W'):-3,  ('S','Y'):-2,  ('S','V'):-2,
-    ('T','A'): 0,  ('T','R'):-1,  ('T','N'): 0,  ('T','D'):-1,  ('T','C'):-1,
-    ('T','Q'):-1,  ('T','E'):-1,  ('T','G'):-2,  ('T','H'):-2,  ('T','I'):-1,
-    ('T','L'):-1,  ('T','K'):-1,  ('T','M'):-1,  ('T','F'):-2,  ('T','P'):-1,
-    ('T','S'): 1,  ('T','T'): 5,  ('T','W'):-2,  ('T','Y'):-2,  ('T','V'): 0,
-    ('W','A'):-3,  ('W','R'):-3,  ('W','N'):-4,  ('W','D'):-4,  ('W','C'):-2,
-    ('W','Q'):-2,  ('W','E'):-3,  ('W','G'):-2,  ('W','H'):-2,  ('W','I'):-3,
-    ('W','L'):-2,  ('W','K'):-3,  ('W','M'):-1,  ('W','F'): 1,  ('W','P'):-4,
-    ('W','S'):-3,  ('W','T'):-2,  ('W','W'): 11, ('W','Y'): 2,  ('W','V'):-3,
-    ('Y','A'):-2,  ('Y','R'):-2,  ('Y','N'):-2,  ('Y','D'):-3,  ('Y','C'):-2,
-    ('Y','Q'):-1,  ('Y','E'):-2,  ('Y','G'):-3,  ('Y','H'): 2,  ('Y','I'):-1,
-    ('Y','L'):-1,  ('Y','K'):-2,  ('Y','M'):-1,  ('Y','F'): 3,  ('Y','P'):-3,
-    ('Y','S'):-2,  ('Y','T'):-2,  ('Y','W'): 2,  ('Y','Y'): 7,  ('Y','V'):-1,
-    ('V','A'): 0,  ('V','R'):-3,  ('V','N'):-3,  ('V','D'):-3,  ('V','C'):-1,
-    ('V','Q'):-2,  ('V','E'):-2,  ('V','G'):-3,  ('V','H'):-3,  ('V','I'): 3,
-    ('V','L'): 1,  ('V','K'):-2,  ('V','M'): 1,  ('V','F'):-1,  ('V','P'):-2,
-    ('V','S'):-2,  ('V','T'): 0,  ('V','W'):-3,  ('V','Y'):-1,  ('V','V'): 4,
+_BLOSUM90_FLAT = {
+    ('A','A'): 5, ('A','R'):-2, ('A','N'):-2, ('A','D'):-3, ('A','C'):-1,
+    ('A','Q'):-1, ('A','E'):-1, ('A','G'): 0, ('A','H'):-2, ('A','I'):-2,
+    ('A','L'):-2, ('A','K'):-1, ('A','M'):-2, ('A','F'):-3, ('A','P'):-1,
+    ('A','S'): 1, ('A','T'): 0, ('A','W'):-4, ('A','Y'):-3, ('A','V'):-1,
+    ('R','A'):-2, ('R','R'): 6, ('R','N'):-1, ('R','D'):-3, ('R','C'):-5,
+    ('R','Q'): 1, ('R','E'):-1, ('R','G'):-3, ('R','H'): 0, ('R','I'):-4,
+    ('R','L'):-3, ('R','K'): 2, ('R','M'):-2, ('R','F'):-4, ('R','P'):-3,
+    ('R','S'):-1, ('R','T'):-2, ('R','W'):-4, ('R','Y'):-3, ('R','V'):-3,
+    ('N','A'):-2, ('N','R'):-1, ('N','N'): 7, ('N','D'): 1, ('N','C'):-4,
+    ('N','Q'): 0, ('N','E'):-1, ('N','G'): 0, ('N','H'): 0, ('N','I'):-4,
+    ('N','L'):-4, ('N','K'): 0, ('N','M'):-3, ('N','F'):-4, ('N','P'):-3,
+    ('N','S'): 1, ('N','T'): 0, ('N','W'):-5, ('N','Y'):-3, ('N','V'):-4,
+    ('D','A'):-3, ('D','R'):-3, ('D','N'): 1, ('D','D'): 7, ('D','C'):-5,
+    ('D','Q'):-1, ('D','E'): 1, ('D','G'):-2, ('D','H'):-2, ('D','I'):-5,
+    ('D','L'):-5, ('D','K'):-1, ('D','M'):-4, ('D','F'):-5, ('D','P'):-2,
+    ('D','S'):-1, ('D','T'):-2, ('D','W'):-6, ('D','Y'):-4, ('D','V'):-4,
+    ('C','A'):-1, ('C','R'):-5, ('C','N'):-4, ('C','D'):-5, ('C','C'): 9,
+    ('C','Q'):-4, ('C','E'):-6, ('C','G'):-4, ('C','H'):-5, ('C','I'):-2,
+    ('C','L'):-2, ('C','K'):-4, ('C','M'):-2, ('C','F'):-3, ('C','P'):-4,
+    ('C','S'):-2, ('C','T'):-2, ('C','W'):-4, ('C','Y'):-4, ('C','V'):-2,
+    ('Q','A'):-1, ('Q','R'): 1, ('Q','N'): 0, ('Q','D'):-1, ('Q','C'):-4,
+    ('Q','Q'): 7, ('Q','E'): 2, ('Q','G'):-3, ('Q','H'): 1, ('Q','I'):-4,
+    ('Q','L'):-3, ('Q','K'): 1, ('Q','M'): 0, ('Q','F'):-4, ('Q','P'):-2,
+    ('Q','S'): 0, ('Q','T'):-1, ('Q','W'):-3, ('Q','Y'):-2, ('Q','V'):-3,
+    ('E','A'):-1, ('E','R'):-1, ('E','N'):-1, ('E','D'): 1, ('E','C'):-6,
+    ('E','Q'): 2, ('E','E'): 6, ('E','G'):-3, ('E','H'):-1, ('E','I'):-4,
+    ('E','L'):-4, ('E','K'): 0, ('E','M'):-3, ('E','F'):-5, ('E','P'):-2,
+    ('E','S'):-1, ('E','T'):-1, ('E','W'):-5, ('E','Y'):-4, ('E','V'):-3,
+    ('G','A'): 0, ('G','R'):-3, ('G','N'): 0, ('G','D'):-2, ('G','C'):-4,
+    ('G','Q'):-3, ('G','E'):-3, ('G','G'): 6, ('G','H'):-3, ('G','I'):-5,
+    ('G','L'):-5, ('G','K'):-2, ('G','M'):-4, ('G','F'):-5, ('G','P'):-3,
+    ('G','S'):-1, ('G','T'):-3, ('G','W'):-4, ('G','Y'):-5, ('G','V'):-4,
+    ('H','A'):-2, ('H','R'): 0, ('H','N'): 0, ('H','D'):-2, ('H','C'):-5,
+    ('H','Q'): 1, ('H','E'):-1, ('H','G'):-3, ('H','H'): 8, ('H','I'):-4,
+    ('H','L'):-4, ('H','K'):-1, ('H','M'):-3, ('H','F'):-2, ('H','P'):-3,
+    ('H','S'):-2, ('H','T'):-2, ('H','W'):-3, ('H','Y'): 1, ('H','V'):-4,
+    ('I','A'):-2, ('I','R'):-4, ('I','N'):-4, ('I','D'):-5, ('I','C'):-2,
+    ('I','Q'):-4, ('I','E'):-4, ('I','G'):-5, ('I','H'):-4, ('I','I'): 5,
+    ('I','L'): 1, ('I','K'):-4, ('I','M'): 1, ('I','F'):-1, ('I','P'):-4,
+    ('I','S'):-3, ('I','T'):-1, ('I','W'):-4, ('I','Y'):-2, ('I','V'): 3,
+    ('L','A'):-2, ('L','R'):-3, ('L','N'):-4, ('L','D'):-5, ('L','C'):-2,
+    ('L','Q'):-3, ('L','E'):-4, ('L','G'):-5, ('L','H'):-4, ('L','I'): 1,
+    ('L','L'): 5, ('L','K'):-3, ('L','M'): 2, ('L','F'): 0, ('L','P'):-4,
+    ('L','S'):-3, ('L','T'):-2, ('L','W'):-3, ('L','Y'):-2, ('L','V'): 0,
+    ('K','A'):-1, ('K','R'): 2, ('K','N'): 0, ('K','D'):-1, ('K','C'):-4,
+    ('K','Q'): 1, ('K','E'): 0, ('K','G'):-2, ('K','H'):-1, ('K','I'):-4,
+    ('K','L'):-3, ('K','K'): 6, ('K','M'):-2, ('K','F'):-4, ('K','P'):-2,
+    ('K','S'):-1, ('K','T'):-1, ('K','W'):-5, ('K','Y'):-3, ('K','V'):-3,
+    ('M','A'):-2, ('M','R'):-2, ('M','N'):-3, ('M','D'):-4, ('M','C'):-2,
+    ('M','Q'): 0, ('M','E'):-3, ('M','G'):-4, ('M','H'):-3, ('M','I'): 1,
+    ('M','L'): 2, ('M','K'):-2, ('M','M'): 7, ('M','F'):-1, ('M','P'):-3,
+    ('M','S'):-2, ('M','T'):-1, ('M','W'):-2, ('M','Y'):-2, ('M','V'): 0,
+    ('F','A'):-3, ('F','R'):-4, ('F','N'):-4, ('F','D'):-5, ('F','C'):-3,
+    ('F','Q'):-4, ('F','E'):-5, ('F','G'):-5, ('F','H'):-2, ('F','I'):-1,
+    ('F','L'): 0, ('F','K'):-4, ('F','M'):-1, ('F','F'): 7, ('F','P'):-4,
+    ('F','S'):-3, ('F','T'):-3, ('F','W'): 0, ('F','Y'): 3, ('F','V'):-2,
+    ('P','A'):-1, ('P','R'):-3, ('P','N'):-3, ('P','D'):-2, ('P','C'):-4,
+    ('P','Q'):-2, ('P','E'):-2, ('P','G'):-3, ('P','H'):-3, ('P','I'):-4,
+    ('P','L'):-4, ('P','K'):-2, ('P','M'):-3, ('P','F'):-4, ('P','P'): 8,
+    ('P','S'):-2, ('P','T'):-2, ('P','W'):-5, ('P','Y'):-4, ('P','V'):-3,
+    ('S','A'): 1, ('S','R'):-1, ('S','N'): 1, ('S','D'):-1, ('S','C'):-2,
+    ('S','Q'): 0, ('S','E'):-1, ('S','G'):-1, ('S','H'):-2, ('S','I'):-3,
+    ('S','L'):-3, ('S','K'):-1, ('S','M'):-2, ('S','F'):-3, ('S','P'):-2,
+    ('S','S'): 5, ('S','T'): 1, ('S','W'):-4, ('S','Y'):-3, ('S','V'):-2,
+    ('T','A'): 0, ('T','R'):-2, ('T','N'): 0, ('T','D'):-2, ('T','C'):-2,
+    ('T','Q'):-1, ('T','E'):-1, ('T','G'):-3, ('T','H'):-2, ('T','I'):-1,
+    ('T','L'):-2, ('T','K'):-1, ('T','M'):-1, ('T','F'):-3, ('T','P'):-2,
+    ('T','S'): 1, ('T','T'): 6, ('T','W'):-4, ('T','Y'):-2, ('T','V'): 0,
+    ('W','A'):-4, ('W','R'):-4, ('W','N'):-5, ('W','D'):-6, ('W','C'):-4,
+    ('W','Q'):-3, ('W','E'):-5, ('W','G'):-4, ('W','H'):-3, ('W','I'):-4,
+    ('W','L'):-3, ('W','K'):-5, ('W','M'):-2, ('W','F'): 0, ('W','P'):-5,
+    ('W','S'):-4, ('W','T'):-4, ('W','W'):11, ('W','Y'): 2, ('W','V'):-4,
+    ('Y','A'):-3, ('Y','R'):-3, ('Y','N'):-3, ('Y','D'):-4, ('Y','C'):-4,
+    ('Y','Q'):-2, ('Y','E'):-4, ('Y','G'):-5, ('Y','H'): 1, ('Y','I'):-2,
+    ('Y','L'):-2, ('Y','K'):-3, ('Y','M'):-2, ('Y','F'): 3, ('Y','P'):-4,
+    ('Y','S'):-3, ('Y','T'):-2, ('Y','W'): 2, ('Y','Y'): 8, ('Y','V'):-3,
+    ('V','A'):-1, ('V','R'):-3, ('V','N'):-4, ('V','D'):-4, ('V','C'):-2,
+    ('V','Q'):-3, ('V','E'):-3, ('V','G'):-4, ('V','H'):-4, ('V','I'): 3,
+    ('V','L'): 0, ('V','K'):-3, ('V','M'): 0, ('V','F'):-2, ('V','P'):-3,
+    ('V','S'):-2, ('V','T'): 0, ('V','W'):-4, ('V','Y'):-3, ('V','V'): 5,
 }
-
-# BLOSUM62 score range: -4 to 11 (diagonals go up to 11 for W)
-# For rosace we group scores into bins: -4,-3,-2,-1,0,1,2,3,4,5 and synonymous (>5)
-# Group index 1..10 map to scores -4..-1,0,1,2,3,4, >=5 non-syn; group 11 = synonymous (wt==mut)
-_BLOSUM_SCORE_TO_GROUP: dict[int, int] = {
-    -4: 1, -3: 2, -2: 3, -1: 4,
-     0: 5,  1: 6,  2: 7,  3: 8,
-     4: 9,
-}
-# Scores >= 5 for non-synonymous -> group 10; synonymous (wt==mut) -> group 11
 
 
 def map_blosum_score(wt: str, mut: str, aa_code: str = "single") -> int:
-    """Map a wildtype/mutant amino acid pair to a BLOSUM62 group index.
+    """Return the BLOSUM90 score for a wildtype/mutant amino acid pair, capped at 5.
 
-    Groups are numbered 1-11:
-    - Groups 1-9 correspond to BLOSUM62 scores -4 to 4.
-    - Group 10 corresponds to BLOSUM62 scores >= 5 (non-synonymous).
-    - Group 11 corresponds to synonymous changes (wt == mut).
+    Matches the R rosaceAA ``MapBlosumScore`` function which uses BLOSUM90 and
+    caps the return value at 5 (``min(blosum90[wt, mut], 5)``).  All synonymous
+    substitutions (diagonal entries ≥ 5) therefore map to 5.  Missense
+    substitution scores are typically in the range −6 to +3.
 
     Parameters
     ----------
@@ -126,20 +117,100 @@ def map_blosum_score(wt: str, mut: str, aa_code: str = "single") -> int:
     Returns
     -------
     int
-        BLOSUM62 group index (1-11).
+        BLOSUM90 score, capped at 5.
     """
     if aa_code != "single":
         raise NotImplementedError("Only single-letter amino acid codes are supported.")
     wt = wt.upper()
     mut = mut.upper()
-    if wt == mut:
-        return 11  # synonymous
-    score = _BLOSUM62_FLAT.get((wt, mut))
+    score = _BLOSUM90_FLAT.get((wt, mut))
     if score is None:
         raise ValueError(f"Unknown amino acid pair: ({wt!r}, {mut!r})")
-    if score >= 5:
-        return 10
-    return _BLOSUM_SCORE_TO_GROUP.get(score, 10)
+    return min(score, 5)
+
+
+def compute_blosum_groups(
+    wt_list: list,
+    mut_list: list,
+    pos_index_list: list,
+    coverage_threshold: float = 0.2,
+) -> tuple:
+    """Compute BLOSUM90 group assignments with rare-group merging.
+
+    Mirrors the R ``GenRosaceInput`` BLOSUM group computation:
+
+    1. Map each (wt, mut) pair to a BLOSUM90 score via ``map_blosum_score``.
+    2. Merge groups whose position coverage (fraction of positions containing
+       at least one variant in the group) is below *coverage_threshold*,
+       iterating from the most-negative to the second-most-positive score,
+       merging each rare group into the adjacent higher-scoring group.
+    3. Dense-rank the final groups to produce contiguous 1-based integers.
+
+    Parameters
+    ----------
+    wt_list:
+        Wildtype amino acids, one per variant.
+    mut_list:
+        Mutant amino acids, one per variant.
+    pos_index_list:
+        Position index (1-based ``vMAPp`` values) for each variant, used to
+        compute per-group position coverage.
+    coverage_threshold:
+        Groups whose coverage is below this value are merged with the next
+        group.  Default matches R's ``cove = 0.2``.
+
+    Returns
+    -------
+    vMAPb : list[int]
+        1-based BLOSUM group index for each variant.
+    B : int
+        Total number of BLOSUM groups after merging.
+    blosum_count : list[float]
+        Count of variants in each group (length *B*).
+    """
+    # Step 1: get raw BLOSUM90 scores
+    scores = np.array(
+        [map_blosum_score(wt, mut) for wt, mut in zip(wt_list, mut_list)],
+        dtype=float,
+    )
+    pos_arr = np.array(pos_index_list)
+    n_pos = len(set(pos_arr))
+
+    # Step 2: rare-group merging — mirrors R's for-loop over sorted unique labels
+    original_labels = sorted(set(scores.tolist()))  # original sorted unique scores
+    removed_indices: list[int] = []  # 0-based indices of merged-away labels
+
+    for i in range(len(original_labels) - 1):  # iterate up to second-to-last (R: 1:(len-1))
+        label_i = original_labels[i]
+        # Coverage uses the CURRENT (possibly already merged) scores array
+        positions_with = set(pos_arr[scores == label_i].tolist())
+        coverage = len(positions_with) / n_pos if n_pos > 0 else 0.0
+
+        if coverage < coverage_threshold:
+            if i < len(original_labels) - 2:
+                # Not the second-to-last: merge into next original label
+                scores[scores == label_i] = original_labels[i + 1]
+                removed_indices.append(i)
+            else:
+                # Second-to-last: merge into the second-to-last of the
+                # remaining labels (mirrors R's label_new[length(label_new)-1])
+                removed_indices.append(i)
+                remaining = [
+                    original_labels[j]
+                    for j in range(len(original_labels))
+                    if j not in set(removed_indices)
+                ]
+                target = remaining[-2] if len(remaining) >= 2 else remaining[-1]
+                scores[scores == label_i] = target
+
+    # Step 3: dense-rank to contiguous 1-based group indices
+    unique_groups = sorted(set(scores.tolist()))
+    group_map = {g: k + 1 for k, g in enumerate(unique_groups)}
+    vMAPb = [int(group_map[s]) for s in scores.tolist()]
+    B = len(unique_groups)
+    blosum_count = [float(np.sum(scores == g)) for g in unique_groups]
+
+    return vMAPb, B, blosum_count
 
 
 def estimate_disp(
