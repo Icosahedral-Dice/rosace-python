@@ -34,6 +34,14 @@ def _load_matrix(matrix_name: str):
     return _MATRIX_CACHE[matrix_name]
 
 
+_TRIPLE_TO_SINGLE = {
+    "ALA": "A", "ARG": "R", "ASN": "N", "ASP": "D", "CYS": "C",
+    "GLN": "Q", "GLU": "E", "GLY": "G", "HIS": "H", "ILE": "I",
+    "LEU": "L", "LYS": "K", "MET": "M", "PHE": "F", "PRO": "P",
+    "SER": "S", "THR": "T", "TRP": "W", "TYR": "Y", "VAL": "V",
+}
+
+
 def map_blosum_score(
     wt: str,
     mut: str,
@@ -54,7 +62,7 @@ def map_blosum_score(
     mut:
         Mutant amino acid (single-letter code).
     aa_code:
-        Amino acid code type (only ``"single"`` is currently supported).
+        Amino acid code type: ``"single"`` or ``"triple"``.
     matrix:
         Name of the BioPython substitution matrix to use.  Defaults to
         ``"BLOSUM90"`` to match the R rosaceAA package.  Any matrix available
@@ -65,15 +73,24 @@ def map_blosum_score(
     int
         Substitution matrix score, capped at 5.
     """
-    if aa_code != "single":
-        raise NotImplementedError("Only single-letter amino acid codes are supported.")
-    wt = wt.upper()
-    mut = mut.upper()
+    wt = str(wt).upper()
+    mut = str(mut).upper()
+    if aa_code == "triple":
+        wt = _TRIPLE_TO_SINGLE.get(wt, wt)
+        mut = _TRIPLE_TO_SINGLE.get(mut, mut)
+    elif aa_code != "single":
+        raise ValueError("Invalid aa_code. Use 'single' or 'triple'.")
+
+    if mut == "DEL":
+        return -7
+    if mut.startswith("INS"):
+        return -8
+
     mat = _load_matrix(matrix)
     try:
         score = mat[wt, mut]
     except (KeyError, IndexError):
-        raise ValueError(f"Unknown amino acid pair: ({wt!r}, {mut!r})")
+        return -9
     return int(min(score, 5))
 
 
@@ -244,41 +261,108 @@ def estimate_disp_start(
     return float(disp)
 
 
+def _add_lfsr_and_labels(df: pd.DataFrame, sig_test: float) -> pd.DataFrame:
+    """Add lfsr/label columns using normal-approximation tails (R-compatible)."""
+    import scipy.stats as stats
+
+    out = df.copy()
+    mu = out["mean"].to_numpy(dtype=float)
+    sd = out["sd"].to_numpy(dtype=float)
+    safe_sd = np.where(np.isnan(sd) | (sd <= 0), 1e-10, sd)
+
+    lfsr_neg = stats.norm.sf(0, loc=mu, scale=safe_sd)  # P(beta > 0)
+    lfsr_pos = stats.norm.cdf(0, loc=mu, scale=safe_sd)  # P(beta < 0)
+    lfsr = np.minimum(lfsr_neg, lfsr_pos)
+
+    out["lfsr_neg"] = lfsr_neg
+    out["lfsr_pos"] = lfsr_pos
+    out["lfsr"] = lfsr
+    out["test_neg"] = lfsr_neg <= (sig_test / 2)
+    out["test_pos"] = lfsr_pos <= (sig_test / 2)
+    out["label"] = np.where(out["test_neg"], "Neg", "Neutral")
+    out["label"] = np.where(out["test_pos"], "Pos", out["label"])
+    return out
+
+
 def output_score(
     score: "Score",
     sig_test: float = 0.05,
-) -> pd.DataFrame:
-    """Compute LFSR and significance labels from a Score object.
+    pos_info: bool = False,
+    blosum_info: bool = False,
+    pos_act_info: bool = False,
+) -> pd.DataFrame | dict[str, pd.DataFrame]:
+    """Compute LFSR/labels and optional ROSACE auxiliary output tables.
 
     Parameters
     ----------
     score:
-        Score object with a ``score`` DataFrame containing at least
-        ``mean`` and ``sd`` columns.
+        Score object with ``score`` DataFrame containing ``mean`` and ``sd``.
     sig_test:
-        Significance threshold for LFSR.
+        LFSR threshold for two-sided sign testing (per-tail threshold is
+        ``sig_test / 2`` to match R).
+    pos_info:
+        If True, return position-level score table alongside variant scores.
+    blosum_info:
+        If True, require ROSACE2/ROSACE3 and include BLOSUM annotations in the
+        returned variant table.
+    pos_act_info:
+        If True, require ROSACE3 and include rho annotations in the returned
+        variant/position tables.
 
     Returns
     -------
-    pd.DataFrame
-        Copy of score.score with additional columns: ``lfsr``, ``label``.
-        label is one of "Neutral", "Neg", "Pos".
+    pd.DataFrame | dict[str, pd.DataFrame]
+        Variant score table by default. If ``pos_info=True``, returns a dict:
+        ``{"df_variant": ..., "df_position": ...}``.
     """
-    import scipy.stats as stats
+    if not str(score.method).startswith("ROSACE"):
+        # Keep non-ROSACE behavior simple and backwards-compatible.
+        return _add_lfsr_and_labels(score.score.copy(), sig_test=sig_test)
 
-    df = score.score.copy()
-    mu = df["mean"].values
-    sd = df["sd"].values
+    model_code = int(str(score.method)[-1])  # ROSACE0..ROSACE3
+    df_variant = _add_lfsr_and_labels(score.score.copy(), sig_test=sig_test)
 
-    lfsr_neg = stats.norm.sf(0, loc=mu, scale=sd)   # P(beta > 0)
-    lfsr_pos = stats.norm.cdf(0, loc=mu, scale=sd)   # P(beta < 0)
-    lfsr = np.minimum(lfsr_neg, lfsr_pos)
+    if blosum_info and model_code < 2:
+        raise ValueError(
+            "blosum_info=True requires ROSACE2 or ROSACE3 output."
+        )
+    if pos_act_info and model_code < 3:
+        raise ValueError(
+            "pos_act_info=True requires ROSACE3 output."
+        )
+    if pos_info and (model_code < 1 or score.optional_score is None):
+        raise ValueError(
+            "pos_info=True requires ROSACE1/2/3 output with optional_score."
+        )
 
-    df["lfsr"] = lfsr
-    label = np.where(
-        lfsr >= sig_test / 2,
-        "Neutral",
-        np.where(mu > 0, "Pos", "Neg"),
-    )
-    df["label"] = label
-    return df
+    # Validate optional variant annotations requested by flags.
+    if blosum_info and "blosum_score" not in df_variant.columns and "blosum_group" not in df_variant.columns:
+        raise ValueError(
+            "blosum_info=True requested but no BLOSUM columns are present."
+        )
+    if pos_act_info and "rho_mean" not in df_variant.columns:
+        raise ValueError(
+            "pos_act_info=True requested but rho columns are missing."
+        )
+
+    if not pos_info:
+        return df_variant
+
+    pos_df = score.optional_score.copy()
+    if "phi_mean" in pos_df.columns:
+        pos_df = pos_df.rename(columns={"phi_mean": "mean", "phi_sd": "sd"})
+    pos_df = pos_df.loc[:, ~pos_df.columns.duplicated()]
+    required_pos_cols = {"pos", "mean", "sd"}
+    missing = required_pos_cols.difference(pos_df.columns)
+    if missing:
+        raise ValueError(
+            f"optional_score is missing required position columns: {sorted(missing)}"
+        )
+    pos_df = _add_lfsr_and_labels(pos_df, sig_test=sig_test)
+    if not pos_act_info and "rho_mean" in pos_df.columns:
+        pos_df = pos_df.drop(columns=[c for c in ("rho_mean", "rho_sd") if c in pos_df.columns])
+
+    return {
+        "df_variant": df_variant,
+        "df_position": pos_df,
+    }

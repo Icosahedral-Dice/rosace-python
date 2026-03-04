@@ -95,9 +95,27 @@ class TestGenRosaceInput:
             "mut": ["R", "N", "D", "C", "Q", "E"],
         })
         data = gen_rosace_input(a, method="ROSACE1", var_info=var_info)
-        assert data["P"] == 3
+        # R-like grouping threshold is 10 by default, so 6 variants collapse
+        # into one grouped position index.
+        assert data["P"] == 1
         assert len(data["vMAPp"]) == 6
         assert "vMAPb" not in data
+
+    def test_rosace1_input_custom_position_threshold(self):
+        a = make_normed_assay(n_vars=6, n_tp=3)
+        var_info = pd.DataFrame({
+            "variant": [f"v{i}" for i in range(6)],
+            "pos": [1, 1, 2, 2, 3, 3],
+            "wt": ["A"] * 6,
+            "mut": ["R", "N", "D", "C", "Q", "E"],
+        })
+        data = gen_rosace_input(
+            a,
+            method="ROSACE1",
+            var_info=var_info,
+            pos_group_threshold=1,
+        )
+        assert data["P"] == 3
 
     def test_rosace2_input(self):
         a = make_normed_assay(n_vars=6, n_tp=3)
@@ -110,6 +128,7 @@ class TestGenRosaceInput:
         data = gen_rosace_input(a, method="ROSACE2", var_info=var_info)
         assert "vMAPb" in data
         assert "blosum_count" in data
+        assert "P_syn" in data
         B = data["B"]
         assert B >= 1
         assert len(data["blosum_count"]) == B
@@ -161,3 +180,12 @@ class TestBlosumMapping:
                 s = map_blosum_score(wt, mut)
                 assert s <= 5, f"Score {s} above cap for ({wt},{mut})"
                 assert s >= -8, f"Score {s} below expected range for ({wt},{mut})"
+
+    def test_triple_code_mapping(self):
+        # Triple-code amino acids should map to single-letter values.
+        assert map_blosum_score("ALA", "VAL", aa_code="triple") == map_blosum_score("A", "V")
+
+    def test_special_del_ins_and_unknown(self):
+        assert map_blosum_score("A", "DEL") == -7
+        assert map_blosum_score("A", "INSX") == -8
+        assert map_blosum_score("A", "???") == -9
