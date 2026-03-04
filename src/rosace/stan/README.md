@@ -1,0 +1,1 @@
+Those stan models are copy-pasted directly from [Rosace-AA/R/stanmodel/R](https://github.com/pimentellab/rosace-aa/blob/main/R/stanmodel.R).
