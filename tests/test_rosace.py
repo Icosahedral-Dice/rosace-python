@@ -95,9 +95,27 @@ class TestGenRosaceInput:
             "mut": ["R", "N", "D", "C", "Q", "E"],
         })
         data = gen_rosace_input(a, method="ROSACE1", var_info=var_info)
-        assert data["P"] == 3
+        # R-like grouping threshold is 10 by default, so 6 variants collapse
+        # into one grouped position index.
+        assert data["P"] == 1
         assert len(data["vMAPp"]) == 6
         assert "vMAPb" not in data
+
+    def test_rosace1_input_custom_position_threshold(self):
+        a = make_normed_assay(n_vars=6, n_tp=3)
+        var_info = pd.DataFrame({
+            "variant": [f"v{i}" for i in range(6)],
+            "pos": [1, 1, 2, 2, 3, 3],
+            "wt": ["A"] * 6,
+            "mut": ["R", "N", "D", "C", "Q", "E"],
+        })
+        data = gen_rosace_input(
+            a,
+            method="ROSACE1",
+            var_info=var_info,
+            pos_group_threshold=1,
+        )
+        assert data["P"] == 3
 
     def test_rosace2_input(self):
         a = make_normed_assay(n_vars=6, n_tp=3)
@@ -109,32 +127,65 @@ class TestGenRosaceInput:
         })
         data = gen_rosace_input(a, method="ROSACE2", var_info=var_info)
         assert "vMAPb" in data
-        assert data["B"] == 11
-        assert all(1 <= g <= 11 for g in data["vMAPb"])
+        assert "blosum_count" in data
+        assert "P_syn" in data
+        B = data["B"]
+        assert B >= 1
+        assert len(data["blosum_count"]) == B
+        assert all(1 <= g <= B for g in data["vMAPb"])
 
     def test_time_vector(self):
         a = make_normed_assay(n_vars=5, n_tp=4)
         data = gen_rosace_input(a, method="ROSACE0", t=[0, 2, 4, 6])
         assert data["t"] == [0, 2, 4, 6]
 
+    def test_default_time_vector_normalized(self):
+        # Default time vector must match R: seq(0, rounds)/rounds → [0, 1/3, 2/3, 1]
+        a = make_normed_assay(n_vars=5, n_tp=4)  # rounds = 3
+        data = gen_rosace_input(a, method="ROSACE0")
+        expected = [0.0, 1 / 3, 2 / 3, 1.0]
+        assert len(data["t"]) == 4
+        for got, exp in zip(data["t"], expected):
+            assert abs(got - exp) < 1e-12, f"t mismatch: {data['t']} != {expected}"
+
+    def test_vmapm_from_raw_counts(self):
+        # vMAPm should be rank-based (ceiling(rank/25)), not quantile-based
+        a = make_normed_assay(n_vars=30, n_tp=4)
+        data = gen_rosace_input(a, method="ROSACE0")
+        # With 30 variants, ceiling(rank/25) gives groups 1 and 2
+        assert all(g >= 1 for g in data["vMAPm"])
+        assert data["M"] == max(data["vMAPm"])
+
 
 class TestBlosumMapping:
     def test_synonymous(self):
-        assert map_blosum_score("A", "A") == 11
+        # All synonymous substitutions return 5 (min(BLOSUM90 diagonal, 5))
+        assert map_blosum_score("A", "A") == 5
+        assert map_blosum_score("W", "W") == 5  # W diagonal = 11, capped to 5
 
     def test_known_negative(self):
-        # W->A has BLOSUM score -3 -> group 2
+        # W->A: BLOSUM90 score = -4
         result = map_blosum_score("W", "A")
-        assert result == 2
+        assert result == -4
 
     def test_known_positive(self):
-        # I->V has BLOSUM score 3 -> group 8
+        # I->V: BLOSUM90 score = 3
         result = map_blosum_score("I", "V")
-        assert result == 8
+        assert result == 3
 
-    def test_all_groups_1_to_10(self):
-        # Just check function returns valid groups for various pairs
+    def test_score_range(self):
+        # All missense scores should be in BLOSUM90 range and <= 5
         for wt in "ARND":
             for mut in "CQEGH":
-                g = map_blosum_score(wt, mut)
-                assert 1 <= g <= 11, f"Group {g} out of range for ({wt},{mut})"
+                s = map_blosum_score(wt, mut)
+                assert s <= 5, f"Score {s} above cap for ({wt},{mut})"
+                assert s >= -8, f"Score {s} below expected range for ({wt},{mut})"
+
+    def test_triple_code_mapping(self):
+        # Triple-code amino acids should map to single-letter values.
+        assert map_blosum_score("ALA", "VAL", aa_code="triple") == map_blosum_score("A", "V")
+
+    def test_special_del_ins_and_unknown(self):
+        assert map_blosum_score("A", "DEL") == -7
+        assert map_blosum_score("A", "INSX") == -8
+        assert map_blosum_score("A", "???") == -9
