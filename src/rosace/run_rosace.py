@@ -418,15 +418,16 @@ def run_rosace(
     # Position-level scores for ROSACE1/2/3
     optional_score = None
     misc: dict = {}
-    pos_order: list[int] = []
+    pos_group_for_variant: list[int] = []
     if method in ("ROSACE1", "ROSACE2", "ROSACE3") and vi is not None:
-        seen: set[int] = set()
-        for v in var_names:
-            if v in vi.index:
-                pos = int(vi.loc[v, "pos"])
-                if pos not in seen:
-                    pos_order.append(pos)
-                    seen.add(pos)
+        raw_pos_for_variant = [int(vi.loc[v, "pos"]) for v in var_names]
+        pos_group_for_variant = [int(g) for g in stan_data.get("vMAPp", [])]
+        if len(pos_group_for_variant) != len(raw_pos_for_variant):
+            pos_group_for_variant = raw_pos_for_variant.copy()
+
+        group_to_pos: dict[int, set[int]] = {}
+        for g, p in zip(pos_group_for_variant, raw_pos_for_variant):
+            group_to_pos.setdefault(int(g), set()).add(int(p))
 
         phi_samples = fit.stan_variable("phi")  # (draws, P)
         phi_mu = phi_samples.mean(axis=0)
@@ -434,8 +435,19 @@ def run_rosace(
         sigma2_samples = fit.stan_variable("sigma2")  # (draws, P)
         sigma2_mu = sigma2_samples.mean(axis=0)
         sigma2_sd = sigma2_samples.std(axis=0)
+        pos_groups = list(range(1, len(phi_mu) + 1))
+        rep_pos = [
+            min(group_to_pos[g]) if g in group_to_pos else g
+            for g in pos_groups
+        ]
+        group_members = [
+            ",".join(str(p) for p in sorted(group_to_pos[g])) if g in group_to_pos else str(g)
+            for g in pos_groups
+        ]
         optional_score = pd.DataFrame({
-            "pos": pos_order,
+            "pos_group": pos_groups,
+            "pos": rep_pos,
+            "pos_members": group_members,
             "mean": phi_mu,  # backwards-compatible aliases
             "sd": phi_sd,
             "phi_mean": phi_mu,
@@ -443,7 +455,8 @@ def run_rosace(
             "sigma2_mean": sigma2_mu,
             "sigma2_sd": sigma2_sd,
         })
-        score_df["pos"] = [int(vi.loc[v, "pos"]) for v in var_names]
+        score_df["pos"] = raw_pos_for_variant
+        score_df["pos_group"] = pos_group_for_variant
 
         if method in ("ROSACE2", "ROSACE3") and {"wt", "mut"}.issubset(vi.columns):
             score_df["wt"] = [str(vi.loc[v, "wt"]) for v in var_names]
@@ -477,17 +490,26 @@ def run_rosace(
         rho_samples = fit.stan_variable("rho")  # (draws, P)
         rho_mu = rho_samples.mean(axis=0)
         rho_sd = rho_samples.std(axis=0)
+        pos_groups = list(range(1, len(rho_mu) + 1))
+        if optional_score is not None and "pos_group" in optional_score.columns:
+            pos_group_to_rep_pos = dict(
+                zip(optional_score["pos_group"], optional_score["pos"], strict=False)
+            )
+            rep_pos = [int(pos_group_to_rep_pos.get(g, g)) for g in pos_groups]
+        else:
+            rep_pos = pos_groups
         misc["rho_scores"] = pd.DataFrame({
-            "pos": pos_order,
+            "pos_group": pos_groups,
+            "pos": rep_pos,
             "rho_mean": rho_mu,
             "rho_sd": rho_sd,
         })
-        if "pos" in score_df.columns:
+        if "pos_group" in score_df.columns:
             rho_lookup = {
-                int(p): (float(rm), float(rs))
-                for p, rm, rs in zip(pos_order, rho_mu, rho_sd)
+                int(g): (float(rm), float(rs))
+                for g, rm, rs in zip(pos_groups, rho_mu, rho_sd, strict=False)
             }
-            rho_vals = [rho_lookup.get(int(p), (np.nan, np.nan)) for p in score_df["pos"]]
+            rho_vals = [rho_lookup.get(int(g), (np.nan, np.nan)) for g in score_df["pos_group"]]
             score_df["rho_mean"] = [r[0] for r in rho_vals]
             score_df["rho_sd"] = [r[1] for r in rho_vals]
 
